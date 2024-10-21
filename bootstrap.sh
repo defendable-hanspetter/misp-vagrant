@@ -42,7 +42,7 @@ post_max_size=50M
 max_execution_time=300
 max_input_time=223
 memory_limit=512M
-PHP_INI=/etc/php/7.2/apache2/php.ini
+PHP_INI=/etc/php/8.1/apache2/php.ini
 
 export DEBIAN_FRONTEND=noninteractive
 export LANGUAGE=en_US.UTF-8
@@ -58,7 +58,7 @@ apt-get update
 
 
 echo "--- Install base packages… ---"
-apt-get -y install curl net-tools ifupdown gcc git gnupg-agent make python openssl redis-server sudo vim zip > /dev/null
+apt-get -y install curl net-tools ifupdown gcc git gnupg-agent make python2 openssl redis-server sudo vim zip > /dev/null
 
 
 echo "--- Installing and configuring Postfix… ---"
@@ -82,7 +82,9 @@ expect -f - <<-EOF
   spawn mysql_secure_installation
   expect "Enter current password for root (enter for none):"
   send -- "\r"
-  expect "Set root password?"
+  expect "Switch to unix_socket authentication"
+  send -- "n\r"
+  expect "Change the root password?"
   send -- "y\r"
   expect "New password:"
   send -- "${DBPASSWORD_ADMIN}\r"
@@ -111,7 +113,7 @@ a2ensite default-ssl > /dev/null
 
 
 echo "--- Installing PHP-specific packages… ---"
-apt-get install -y libapache2-mod-php php php-cli php-gnupg php-dev php-json php-mysql php-opcache php-readline php-redis php-xml php-mbstring php-gd > /dev/null
+apt-get install -y libapache2-mod-php php php-cli php-gnupg php-dev php-json php-mysql php-opcache php-readline php-redis php-xml php-mbstring php-gd php-curl > /dev/null
 
 
 
@@ -144,13 +146,13 @@ sudo -u www-data -H git config core.filemode false
 
 
 echo "--- Installing Mitre's STIX… ---"
-apt-get install -y python-dev python-pip libxml2-dev libxslt1-dev zlib1g-dev python-setuptools > /dev/null
+apt-get install -y python2-dev python-pip libxml2-dev libxslt1-dev zlib1g-dev python-setuptools php-curl > /dev/null
 cd $PATH_TO_MISP/app/files/scripts
 sudo -u www-data -H git clone https://github.com/CybOXProject/python-cybox.git
 sudo -u www-data -H git clone https://github.com/STIXProject/python-stix.git
 cd $PATH_TO_MISP/app/files/scripts/python-cybox
 sudo -u www-data -H git checkout v2.1.0.12
-python setup.py install > /dev/null
+python2 setup.py install > /dev/null
 cd $PATH_TO_MISP/app/files/scripts/python-stix
 sudo -u www-data -H git checkout v1.1.1.4
 python setup.py install > /dev/null
@@ -262,8 +264,8 @@ EOF
 chown -R www-data:www-data $PATH_TO_MISP/app/Config
 chmod -R 750 $PATH_TO_MISP/app/Config
 # Set some MISP directives with the command line tool
-$PATH_TO_MISP/app/Console/cake Baseurl $MISP_BASEURL
-$PATH_TO_MISP/app/Console/cake Live $MISP_LIVE
+$PATH_TO_MISP/app/Console/cake admin baseurl $MISP_BASEURL
+$PATH_TO_MISP/app/Console/cake admin live $MISP_LIVE
 
 
 echo "--- Generating a GPG encryption key… ---"
@@ -287,7 +289,7 @@ EOF
 sudo -u www-data -H gpg --homedir $PATH_TO_MISP/.gnupg --batch --gen-key gen-key-script
 rm gen-key-script
 # And export the public key to the webroot
-sudo -u www-data -H gpg --homedir $PATH_TO_MISP/.gnupg --batch --gen-key gen-key-scriptgpg --homedir $PATH_TO_MISP/.gnupg --export --armor $EMAIL_ADDRESS > $PATH_TO_MISP/app/webroot/gpg.asc
+sudo -u www-data -H gpg --homedir $PATH_TO_MISP/.gnupg --export --armor $GPG_EMAIL_ADDRESS > $PATH_TO_MISP/app/webroot/gpg.asc
 
 
 echo "--- Making the background workers start on boot… ---"
@@ -319,12 +321,8 @@ sed -i -e '$i \sudo -u www-data -H bash /var/www/MISP/app/Console/worker/start.s
 
 
 echo "--- Installing MISP modules… ---"
-apt-get install -y python3-dev python3-pip libpq5 libjpeg-dev > /dev/null
-cd /usr/local/src/
-git clone https://github.com/MISP/misp-modules.git
-cd misp-modules
-pip3 install -I -r REQUIREMENTS > /dev/null
-pip3 install -I . > /dev/null
+apt-get install -y python3-dev python3-pip libpq5 libjpeg-dev libpoppler-cpp-dev > /dev/null
+pip install misp-modules > /dev/null 
 # With systemd:
 # sudo cat > /etc/systemd/system/misp-modules.service  <<EOF
 # [Unit]
@@ -350,7 +348,7 @@ systemctl restart apache2 > /dev/null
 sleep 5
 
 
-sudo -E $PATH_TO_MISP/app/Console/cake userInit -q > /dev/null
+sudo -E $PATH_TO_MISP/app/Console/cake user init -q > /dev/null
 AUTH_KEY=$(mysql -u $DBUSER_MISP -p$DBPASSWORD_MISP misp -e "SELECT authkey FROM users;" | tail -1)
 echo "--- Updating the galaxies… ---"
 curl --header "Authorization: $AUTH_KEY" --header "Accept: application/json" --header "Content-Type: application/json" -o /dev/null -s -X POST http://127.0.0.1/galaxies/update
